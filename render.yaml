@@ -4,16 +4,22 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
-    healthCheckPath: /health
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/panels
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
       - key: DATABASE_URL
         fromDatabase:
           name: factory-panel-db
           property: connectionString
-      - key: SECRET_KEY
+      - key: ADMIN_KEY
         generateValue: true
+      - key: APP_TITLE
+        value: Factory Test Room Reservation
 
 databases:
   - name: factory-panel-db
     plan: free
+    databaseName: factory_booking
+    user: factory_app
