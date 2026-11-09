@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Factory Test Room Panel Reservation</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <div><p class="eyebrow">FACTORY TEST ROOM</p><h1>Panel Reservation</h1></div>
+      <label class="date-filter">조회일 <input id="viewDate" type="date" value="{{ today }}"></label>
+    </header>
+
+    <section class="legend" aria-label="상태 범례">
+      <span><i class="dot available"></i>예약 가능</span>
+      <span><i class="dot reserved"></i>선택일 예약</span>
+    </section>
+
+    <section id="panelGrid" class="panel-grid">
+      {% for panel in panels %}
+      <button type="button" class="panel" data-panel="{{ panel }}"><strong>{{ panel }}</strong><span>예약 가능</span></button>
+      {% endfor %}
+    </section>
+
+    <section class="list-card">
+      <div class="list-title"><h2>전체 예약 내역</h2><button id="refreshBtn" type="button" class="secondary">새로고침</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Panel</th><th>기간</th><th>프로젝트</th><th>예약자</th><th>비고</th><th></th></tr></thead><tbody id="reservationBody"></tbody></table></div>
+    </section>
+  </main>
+
+  <dialog id="reserveDialog">
+    <form id="reserveForm">
+      <div class="dialog-head"><div><p class="eyebrow">NEW RESERVATION</p><h2 id="dialogTitle">Panel 예약</h2></div><button type="button" id="closeBtn" class="icon-btn" aria-label="닫기">×</button></div>
+      <input type="hidden" id="panel" name="panel">
+      <label>예약자<input id="userName" name="user_name" maxlength="80" required placeholder="예: 김동욱"></label>
+      <label>프로젝트명<input id="projectName" name="project_name" maxlength="120" required placeholder="예: KOGAS 평택기지"></label>
+      <div class="date-row"><label>시작일<input id="startDate" name="start_date" type="date" required></label><label>종료일<input id="endDate" name="end_date" type="date" required></label></div>
+      <label>비고<textarea id="note" name="note" maxlength="300" rows="3" placeholder="선택 입력"></textarea></label>
+      <p id="formMessage" class="message" aria-live="polite"></p>
+      <div class="actions"><button type="button" id="cancelBtn" class="secondary">취소</button><button type="submit" class="primary">예약 등록</button></div>
+    </form>
+  </dialog>
+
+<script>
+const state = { reservations: [] };
+const dialog = document.getElementById('reserveDialog');
+const form = document.getElementById('reserveForm');
+const msg = document.getElementById('formMessage');
+const viewDate = document.getElementById('viewDate');
+
+function esc(v){ const d=document.createElement('div'); d.textContent=v ?? ''; return d.innerHTML; }
+function activeOn(r, day){ return r.start_date <= day && r.end_date >= day; }
+
+async function loadReservations(){
+  const res = await fetch('/api/reservations');
+  state.reservations = await res.json();
+  render();
+}
+function render(){
+  const day = viewDate.value;
+  document.querySelectorAll('.panel').forEach(btn => {
+    const found = state.reservations.find(r => r.panel === btn.dataset.panel && activeOn(r, day));
+    btn.classList.toggle('is-reserved', !!found);
+    btn.querySelector('span').textContent = found ? `${found.project_name} · ${found.user_name}` : '예약 가능';
+  });
+  const body = document.getElementById('reservationBody');
+  body.innerHTML = state.reservations.length ? state.reservations.map(r => `<tr><td><b>${esc(r.panel)}</b></td><td>${esc(r.start_date)} ~ ${esc(r.end_date)}</td><td>${esc(r.project_name)}</td><td>${esc(r.user_name)}</td><td>${esc(r.note)}</td><td><button type="button" class="delete-btn" data-id="${r.id}">취소</button></td></tr>`).join('') : '<tr><td colspan="6" class="empty">등록된 예약이 없습니다.</td></tr>';
+  body.querySelectorAll('.delete-btn').forEach(b => b.addEventListener('click', () => removeReservation(b.dataset.id)));
+}
+function openDialog(panel){
+  form.reset(); msg.textContent='';
+  document.getElementById('panel').value = panel;
+  document.getElementById('dialogTitle').textContent = `${panel} 예약`;
+  document.getElementById('startDate').value = viewDate.value;
+  document.getElementById('endDate').value = viewDate.value;
+  dialog.showModal();
+}
+async function removeReservation(id){
+  if(!confirm('이 예약을 취소하시겠습니까?')) return;
+  const res = await fetch(`/api/reservations/${id}`, {method:'DELETE'});
+  const data = await res.json();
+  if(!res.ok) alert(data.message); else loadReservations();
+}
+
+document.querySelectorAll('.panel').forEach(b => b.addEventListener('click', () => openDialog(b.dataset.panel)));
+viewDate.addEventListener('change', render);
+document.getElementById('refreshBtn').addEventListener('click', loadReservations);
+document.getElementById('closeBtn').addEventListener('click', () => dialog.close());
+document.getElementById('cancelBtn').addEventListener('click', () => dialog.close());
+form.addEventListener('submit', async e => {
+  e.preventDefault(); msg.textContent='저장 중...';
+  const payload = Object.fromEntries(new FormData(form).entries());
+  const res = await fetch('/api/reservations', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  const data = await res.json();
+  if(!res.ok){ msg.textContent=data.message || '저장에 실패했습니다.'; return; }
+  dialog.close(); await loadReservations();
+});
+loadReservations().catch(() => alert('예약 데이터를 불러오지 못했습니다.'));
+</script>
+</body></html>
